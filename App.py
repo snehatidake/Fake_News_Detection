@@ -3,40 +3,37 @@ import streamlit as st
 import joblib
 import re
 
-# ---------------------------------
-# PAGE CONFIGURATION
-# ---------------------------------
+# Page configuration
 st.set_page_config(
-    page_title="Fake News Detector",
+    page_title="Fake News Detection",
     page_icon="📰",
     layout="centered"
 )
 
-# ---------------------------------
-# LOAD SAVED FILES
-# ---------------------------------
+# Load trained files
 try:
     model = joblib.load("fake_news_model.pkl")
     tfidf_vectorizer = joblib.load("tfidf_vectorizer.pkl")
     label_encoder = joblib.load("label_encoder.pkl")
 
 except Exception as e:
-    st.error("Error loading model files.")
-    st.write(e)
+    st.error("Model files could not be loaded.")
+    st.write("Make sure these 3 files are in the same folder as App.py:")
+    st.write("1. fake_news_model.pkl")
+    st.write("2. tfidf_vectorizer.pkl")
+    st.write("3. label_encoder.pkl")
+    st.write("Error:", e)
     st.stop()
 
 
-# ---------------------------------
-# TEXT CLEANING FUNCTION
-# ---------------------------------
+# Text cleaning function
 def clean_text(text):
-
     text = text.lower()
 
     # Remove URLs
     text = re.sub(r"http\S+|www\S+|https\S+", "", text)
 
-    # Remove special characters
+    # Remove special characters and numbers
     text = re.sub(r"[^a-zA-Z\s]", "", text)
 
     # Remove extra spaces
@@ -45,134 +42,107 @@ def clean_text(text):
     return text
 
 
-# ---------------------------------
-# TITLE
-# ---------------------------------
+# Title
 st.title("📰 Fake News Detection System")
 
 st.write(
-    "Enter a news article below and the machine learning model "
-    "will predict whether the news is **Fake** or **Real**."
+    "Enter a news article below to check whether it is "
+    "likely to be Fake or Real."
 )
 
 st.divider()
 
 
-# ---------------------------------
-# NEWS INPUT
-# ---------------------------------
+# News input
 news_text = st.text_area(
     "✍️ Enter News Article",
     height=250,
-    placeholder="Paste the news article here..."
+    placeholder="Paste your news article here..."
 )
 
 
-# ---------------------------------
-# PREDICTION BUTTON
-# ---------------------------------
+# Prediction button
 if st.button("🔍 Detect News", use_container_width=True):
 
     if news_text.strip() == "":
-        st.warning("⚠️ Please enter a news article first.")
+        st.warning("⚠️ Please enter a news article.")
 
     else:
 
-        # Clean input
-        cleaned_news = clean_text(news_text)
+        # Clean news
+        cleaned_text = clean_text(news_text)
 
-        # Convert text into TF-IDF numerical features
-        news_vector = tfidf_vectorizer.transform([cleaned_news])
+        # Convert text into TF-IDF
+        news_vector = tfidf_vectorizer.transform([cleaned_text])
 
-        # Make prediction
+        # Prediction
         prediction = model.predict(news_vector)
 
-        # Convert encoded prediction back to original label
+        # Convert encoded value back to label
         predicted_label = label_encoder.inverse_transform(prediction)[0]
 
-        # ---------------------------------
-        # CONFIDENCE
-        # ---------------------------------
+        # Confidence
+        confidence = None
+
         if hasattr(model, "predict_proba"):
-
             probabilities = model.predict_proba(news_vector)
-
             confidence = probabilities.max() * 100
-
-        else:
-            confidence = None
-
 
         st.divider()
 
-        # ---------------------------------
-        # RESULT
-        # ---------------------------------
         st.subheader("📊 Prediction Result")
 
+        # Display result
         if str(predicted_label).lower() == "fake":
-
             st.error("🚨 FAKE NEWS")
-
         else:
-
             st.success("✅ REAL NEWS")
 
-
-        # ---------------------------------
-        # CONFIDENCE SCORE
-        # ---------------------------------
+        # Display confidence
         if confidence is not None:
 
             st.metric(
-                label="Model Confidence",
-                value=f"{confidence:.2f}%"
+                "Model Confidence",
+                f"{confidence:.2f}%"
             )
 
             st.progress(
-                int(confidence)
+                min(int(confidence), 100)
             )
 
-
-        # ---------------------------------
-        # INFORMATION
-        # ---------------------------------
         st.info(
-            "The prediction is generated using the trained "
-            "machine learning model and TF-IDF text features."
+            "This prediction is generated using your trained "
+            "Machine Learning model and TF-IDF vectorizer."
         )
 
 
-# ---------------------------------
-# SIDEBAR
-# ---------------------------------
+# Sidebar
 with st.sidebar:
 
-    st.header("ℹ️ About")
+    st.header("ℹ️ About This Project")
 
     st.write(
-        "This Fake News Detection System uses "
-        "Machine Learning to classify news articles."
+        "This application uses Machine Learning to classify "
+        "news articles as Fake or Real."
     )
 
-    st.write("### Technology Used")
+    st.subheader("Technology Used")
 
     st.write("""
-    - Python
-    - Pandas
-    - Scikit-learn
-    - TF-IDF
-    - Logistic Regression
-    - Streamlit
+    • Python  
+    • Scikit-learn  
+    • TF-IDF  
+    • Logistic Regression  
+    • Streamlit  
     """)
 
-    st.write("### Output")
+    st.subheader("Output")
 
     st.write("""
-    **Fake News** 🚨
+    🚨 Fake News
 
-    **Real News** ✅
+    ✅ Real News
 
-    **Confidence Score** 📊
+    📊 Confidence Score
     """)
 ```
