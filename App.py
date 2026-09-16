@@ -1,11 +1,17 @@
+```python
 import streamlit as st
 import joblib
-import re
+import nltk
 import os
 
-# --------------------------------------------------
-# Page Configuration
-# --------------------------------------------------
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+
+
+# =========================================================
+# PAGE CONFIGURATION
+# =========================================================
 
 st.set_page_config(
     page_title="Fake News Detection",
@@ -13,214 +19,244 @@ st.set_page_config(
     layout="centered"
 )
 
-# --------------------------------------------------
-# Custom CSS
-# --------------------------------------------------
 
-st.markdown("""
-<style>
-.main {
-    padding: 2rem;
-}
+# =========================================================
+# NLTK RESOURCES
+# =========================================================
 
-.title {
-    text-align: center;
-    font-size: 40px;
-    font-weight: bold;
-}
+@st.cache_resource
+def download_nltk_resources():
+    nltk.download("punkt", quiet=True)
+    nltk.download("punkt_tab", quiet=True)
+    nltk.download("stopwords", quiet=True)
 
-.subtitle {
-    text-align: center;
-    font-size: 18px;
-    margin-bottom: 30px;
-}
 
-.result-box {
-    padding: 20px;
-    border-radius: 10px;
-    text-align: center;
-    font-size: 24px;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
+download_nltk_resources()
 
-# --------------------------------------------------
-# Title
-# --------------------------------------------------
 
-st.markdown(
-    '<div class="title">📰 Fake News Detection System</div>',
-    unsafe_allow_html=True
-)
+# =========================================================
+# LOAD TRAINED MODEL FILES
+# =========================================================
 
-st.markdown(
-    '<div class="subtitle">AI-powered news classification using Machine Learning</div>',
-    unsafe_allow_html=True
-)
+@st.cache_resource
+def load_models():
 
-# --------------------------------------------------
-# Model File Paths
-# --------------------------------------------------
+    model = joblib.load("fake_news_model (1).pkl")
 
-MODEL_FILE = "fake_news_model (1).pkl"
-VECTORIZER_FILE = "tfidf_vectorizer (1).pkl"
-ENCODER_FILE = "label_encoder (1).pkl"
+    tfidf_vectorizer = joblib.load(
+        "tfidf_vectorizer (1)(1).pkl"
+    )
 
-# --------------------------------------------------
-# Check Files
-# --------------------------------------------------
+    label_encoder = joblib.load(
+        "label_encoder (1).pkl"
+    )
 
-missing_files = []
+    return model, tfidf_vectorizer, label_encoder
 
-if not os.path.exists(MODEL_FILE):
-    missing_files.append(MODEL_FILE)
-
-if not os.path.exists(VECTORIZER_FILE):
-    missing_files.append(VECTORIZER_FILE)
-
-if not os.path.exists(ENCODER_FILE):
-    missing_files.append(ENCODER_FILE)
-
-if missing_files:
-
-    st.error("❌ Required model files are missing.")
-
-    st.write("Please make sure these files are uploaded to GitHub:")
-
-    for file in missing_files:
-        st.write("•", file)
-
-    st.stop()
-
-# --------------------------------------------------
-# Load Model
-# --------------------------------------------------
 
 try:
-    model = joblib.load(MODEL_FILE)
-    vectorizer = joblib.load(VECTORIZER_FILE)
-    label_encoder = joblib.load(ENCODER_FILE)
-
+    model, tfidf_vectorizer, label_encoder = load_models()
 except Exception as e:
 
-    st.error("❌ Error loading ML model files.")
+    st.error("❌ Model files could not be loaded.")
 
-    st.write("Please check that the `.pkl` files are valid.")
+    st.info(
+        "Make sure these 3 files are in the same GitHub repository "
+        "as App.py."
+    )
+
+    st.code(
+        """
+fake_news_model (1).pkl
+tfidf_vectorizer (1)(1).pkl
+label_encoder (1).pkl
+        """
+    )
 
     st.stop()
 
-# --------------------------------------------------
-# Text Preprocessing
-# --------------------------------------------------
+
+# =========================================================
+# TEXT PREPROCESSING
+# =========================================================
+
+stop_words = set(stopwords.words("english"))
+stemmer = PorterStemmer()
+
 
 def preprocess_text(text):
 
+    # Convert text to lowercase
     text = text.lower()
 
-    # Remove URLs
-    text = re.sub(r"http\S+|www\S+|https\S+", "", text)
+    # Tokenization
+    tokens = word_tokenize(text)
 
-    # Remove special characters
-    text = re.sub(r"[^a-zA-Z\s]", " ", text)
+    # Remove punctuation and stopwords
+    filtered_tokens = [
+        word
+        for word in tokens
+        if word.isalpha() and word not in stop_words
+    ]
 
-    # Remove extra spaces
-    text = re.sub(r"\s+", " ", text).strip()
+    # Stemming
+    stemmed_tokens = [
+        stemmer.stem(word)
+        for word in filtered_tokens
+    ]
 
-    return text
+    # Convert list back to text
+    processed_text = " ".join(stemmed_tokens)
 
-# --------------------------------------------------
-# News Input
-# --------------------------------------------------
+    return processed_text
 
-st.subheader("Enter News Article")
 
-news_text = st.text_area(
-    "Paste the news article below:",
-    height=220,
-    placeholder="Enter or paste news article here..."
+# =========================================================
+# HEADER
+# =========================================================
+
+st.title("📰 Fake News Detection System")
+
+st.write(
+    "Enter a news article below and the Machine Learning "
+    "model will predict whether the news is Fake or Real."
 )
 
-# --------------------------------------------------
-# Prediction Button
-# --------------------------------------------------
+st.divider()
 
-if st.button("🔍 Detect Fake News", use_container_width=True):
 
-    if news_text.strip() == "":
-        st.warning("⚠️ Please enter a news article first.")
+# =========================================================
+# NEWS INPUT
+# =========================================================
+
+news = st.text_area(
+    "📝 Enter News Article",
+    height=250,
+    placeholder="Paste your news article here..."
+)
+
+
+# =========================================================
+# DETECT BUTTON
+# =========================================================
+
+if st.button("🔍 Detect News", use_container_width=True):
+
+    if not news.strip():
+
+        st.warning(
+            "⚠️ Please enter a news article first."
+        )
 
     else:
 
         try:
 
-            # Preprocess
-            cleaned_text = preprocess_text(news_text)
+            # -------------------------------------------------
+            # PREPROCESS TEXT
+            # -------------------------------------------------
 
-            # TF-IDF transformation
-            transformed_text = vectorizer.transform([cleaned_text])
+            processed_text = preprocess_text(news)
 
-            # Prediction
-            prediction = model.predict(transformed_text)
+            # -------------------------------------------------
+            # TF-IDF TRANSFORMATION
+            # -------------------------------------------------
 
-            # Convert prediction to original label
-            try:
-                result = label_encoder.inverse_transform(prediction)[0]
-            except Exception:
-                result = str(prediction[0])
+            vector = tfidf_vectorizer.transform(
+                [processed_text]
+            )
 
-            # --------------------------------------------------
-            # Confidence
-            # --------------------------------------------------
+            # -------------------------------------------------
+            # PREDICTION
+            # -------------------------------------------------
 
-            confidence = None
+            prediction = model.predict(vector)
 
-            if hasattr(model, "predict_proba"):
+            # Convert encoded value to original label
+            predicted_class = label_encoder.inverse_transform(
+                prediction
+            )[0]
 
-                probabilities = model.predict_proba(transformed_text)
+            # -------------------------------------------------
+            # CONFIDENCE
+            # -------------------------------------------------
 
-                confidence = max(probabilities[0]) * 100
+            probabilities = model.predict_proba(vector)
 
-            # --------------------------------------------------
-            # Result
-            # --------------------------------------------------
+            confidence = probabilities.max() * 100
 
-            result_text = str(result).lower()
+            # -------------------------------------------------
+            # RESULT
+            # -------------------------------------------------
 
-            if "fake" in result_text:
+            st.divider()
 
-                st.error(
-                    "🚨 FAKE NEWS DETECTED"
-                )
+            st.subheader("🎯 Prediction Result")
 
-            elif "real" in result_text:
+            if str(predicted_class).lower() == "fake":
 
-                st.success(
-                    "✅ REAL NEWS DETECTED"
-                )
+                st.error("🚨 FAKE NEWS")
 
             else:
 
-                st.info(
-                    f"Prediction: {result}"
-                )
+                st.success("✅ REAL NEWS")
 
-            # --------------------------------------------------
-            # Confidence
-            # --------------------------------------------------
+            # -------------------------------------------------
+            # CONFIDENCE
+            # -------------------------------------------------
 
-            if confidence is not None:
+            st.metric(
+                "Model Confidence",
+                f"{confidence:.2f}%"
+            )
 
-                st.metric(
-                    "Prediction Confidence",
-                    f"{confidence:.2f}%"
-                )
+            # -------------------------------------------------
+            # PROGRESS BAR
+            # -------------------------------------------------
+
+            st.write("Confidence Level")
+
+            st.progress(
+                min(int(confidence), 100)
+            )
+
+            # -------------------------------------------------
+            # ANALYSIS
+            # -------------------------------------------------
+
+            st.subheader("📊 Analysis")
+
+            st.write(
+                f"The model predicts this article as "
+                f"**{predicted_class.upper()}** "
+                f"with a confidence of "
+                f"**{confidence:.2f}%**."
+            )
+
+            # -------------------------------------------------
+            # PREPROCESSED TEXT
+            # -------------------------------------------------
+
+            with st.expander("🔎 View Processed Text"):
+
+                st.write(processed_text)
 
         except Exception as e:
 
-            st.error("❌ Prediction error occurred.")
-
-            st.write(
-                "Please make sure the preprocessing used during training "
-                "matches the preprocessing used in this application."
+            st.error(
+                "❌ An error occurred while processing the news."
             )
+
+            st.code(str(e))
+
+
+# =========================================================
+# FOOTER
+# =========================================================
+
+st.divider()
+
+st.caption(
+    "Fake News Detection System | Machine Learning Project"
+)
+
