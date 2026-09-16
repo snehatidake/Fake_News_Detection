@@ -1,5 +1,6 @@
+```text
 streamlit
 joblib
-scikit-learn
-numpy
-pandas
+nltk
+scikit-learn==1.6.1
+```
