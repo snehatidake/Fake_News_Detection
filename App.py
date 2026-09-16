@@ -1,11 +1,7 @@
 import streamlit as st
 import joblib
 import re
-import string
-import nltk
-
-from nltk.corpus import stopwords
-from nltk.stem import PorterStemmer
+import os
 
 # --------------------------------------------------
 # Page Configuration
@@ -14,47 +10,105 @@ from nltk.stem import PorterStemmer
 st.set_page_config(
     page_title="Fake News Detection",
     page_icon="📰",
-    layout="wide"
+    layout="centered"
 )
 
 # --------------------------------------------------
-# Download NLTK Resources
+# Custom CSS
 # --------------------------------------------------
 
-@st.cache_resource
-def download_nltk_resources():
-    nltk.download("stopwords", quiet=True)
+st.markdown("""
+<style>
+.main {
+    padding: 2rem;
+}
 
-download_nltk_resources()
+.title {
+    text-align: center;
+    font-size: 40px;
+    font-weight: bold;
+}
 
-stop_words = set(stopwords.words("english"))
-stemmer = PorterStemmer()
+.subtitle {
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 30px;
+}
+
+.result-box {
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # --------------------------------------------------
-# Load Trained ML Files
+# Title
 # --------------------------------------------------
 
-@st.cache_resource
-def load_models():
+st.markdown(
+    '<div class="title">📰 Fake News Detection System</div>',
+    unsafe_allow_html=True
+)
 
-    model = joblib.load("fake_news_model (1).pkl")
-    vectorizer = joblib.load("tfidf_vectorizer (1).pkl")
-    label_encoder = joblib.load("label_encoder (1).pkl")
+st.markdown(
+    '<div class="subtitle">AI-powered news classification using Machine Learning</div>',
+    unsafe_allow_html=True
+)
 
-    return model, vectorizer, label_encoder
+# --------------------------------------------------
+# Model File Paths
+# --------------------------------------------------
 
+MODEL_FILE = "fake_news_model (1).pkl"
+VECTORIZER_FILE = "tfidf_vectorizer (1).pkl"
+ENCODER_FILE = "label_encoder (1).pkl"
+
+# --------------------------------------------------
+# Check Files
+# --------------------------------------------------
+
+missing_files = []
+
+if not os.path.exists(MODEL_FILE):
+    missing_files.append(MODEL_FILE)
+
+if not os.path.exists(VECTORIZER_FILE):
+    missing_files.append(VECTORIZER_FILE)
+
+if not os.path.exists(ENCODER_FILE):
+    missing_files.append(ENCODER_FILE)
+
+if missing_files:
+
+    st.error("❌ Required model files are missing.")
+
+    st.write("Please make sure these files are uploaded to GitHub:")
+
+    for file in missing_files:
+        st.write("•", file)
+
+    st.stop()
+
+# --------------------------------------------------
+# Load Model
+# --------------------------------------------------
 
 try:
-    model, vectorizer, label_encoder = load_models()
-    model_loaded = True
+    model = joblib.load(MODEL_FILE)
+    vectorizer = joblib.load(VECTORIZER_FILE)
+    label_encoder = joblib.load(ENCODER_FILE)
 
 except Exception as e:
-    model_loaded = False
-    st.error("⚠️ Model files could not be loaded.")
-    st.info(
-        "Please check that all three .pkl files are present "
-        "in your GitHub repository."
-    )
+
+    st.error("❌ Error loading ML model files.")
+
+    st.write("Please check that the `.pkl` files are valid.")
+
+    st.stop()
 
 # --------------------------------------------------
 # Text Preprocessing
@@ -64,132 +118,109 @@ def preprocess_text(text):
 
     text = text.lower()
 
+    # Remove URLs
     text = re.sub(r"http\S+|www\S+|https\S+", "", text)
 
-    text = re.sub(r"\d+", "", text)
+    # Remove special characters
+    text = re.sub(r"[^a-zA-Z\s]", " ", text)
 
-    text = text.translate(
-        str.maketrans("", "", string.punctuation)
-    )
+    # Remove extra spaces
+    text = re.sub(r"\s+", " ", text).strip()
 
-    words = text.split()
-
-    words = [
-        stemmer.stem(word)
-        for word in words
-        if word not in stop_words
-    ]
-
-    return " ".join(words)
+    return text
 
 # --------------------------------------------------
-# Header
+# News Input
 # --------------------------------------------------
 
-st.title("📰 Fake News Detection System")
-
-st.write(
-    "Enter a news article below to predict whether it is "
-    "Fake or Real using Machine Learning."
-)
-
-st.divider()
-
-# --------------------------------------------------
-# Input Section
-# --------------------------------------------------
-
-st.subheader("📝 Enter News Article")
+st.subheader("Enter News Article")
 
 news_text = st.text_area(
-    "Paste your news article here:",
+    "Paste the news article below:",
     height=220,
-    placeholder="Enter news article text..."
+    placeholder="Enter or paste news article here..."
 )
 
 # --------------------------------------------------
-# Prediction
+# Prediction Button
 # --------------------------------------------------
 
-if st.button("🔍 Predict News", use_container_width=True):
+if st.button("🔍 Detect Fake News", use_container_width=True):
 
-    if not model_loaded:
-        st.error("Model is not loaded. Please check your .pkl files.")
-
-    elif news_text.strip() == "":
+    if news_text.strip() == "":
         st.warning("⚠️ Please enter a news article first.")
 
     else:
 
-        with st.spinner("Analyzing news..."):
+        try:
 
+            # Preprocess
             cleaned_text = preprocess_text(news_text)
 
-            transformed_text = vectorizer.transform(
-                [cleaned_text]
-            )
+            # TF-IDF transformation
+            transformed_text = vectorizer.transform([cleaned_text])
 
+            # Prediction
             prediction = model.predict(transformed_text)
 
-            predicted_label = label_encoder.inverse_transform(
-                prediction
-            )[0]
+            # Convert prediction to original label
+            try:
+                result = label_encoder.inverse_transform(prediction)[0]
+            except Exception:
+                result = str(prediction[0])
 
-        # --------------------------------------------------
-        # Result
-        # --------------------------------------------------
+            # --------------------------------------------------
+            # Confidence
+            # --------------------------------------------------
 
-        st.subheader("📊 Prediction Result")
+            confidence = None
 
-        label = str(predicted_label).strip().lower()
+            if hasattr(model, "predict_proba"):
 
-        if label in ["fake", "1", "false"]:
+                probabilities = model.predict_proba(transformed_text)
 
-            st.error("🚨 FAKE NEWS")
+                confidence = max(probabilities[0]) * 100
+
+            # --------------------------------------------------
+            # Result
+            # --------------------------------------------------
+
+            result_text = str(result).lower()
+
+            if "fake" in result_text:
+
+                st.error(
+                    "🚨 FAKE NEWS DETECTED"
+                )
+
+            elif "real" in result_text:
+
+                st.success(
+                    "✅ REAL NEWS DETECTED"
+                )
+
+            else:
+
+                st.info(
+                    f"Prediction: {result}"
+                )
+
+            # --------------------------------------------------
+            # Confidence
+            # --------------------------------------------------
+
+            if confidence is not None:
+
+                st.metric(
+                    "Prediction Confidence",
+                    f"{confidence:.2f}%"
+                )
+
+        except Exception as e:
+
+            st.error("❌ Prediction error occurred.")
 
             st.write(
-                "The model predicts that this news article "
-                "is Fake."
+                "Please make sure the preprocessing used during training "
+                "matches the preprocessing used in this application."
             )
-
-        else:
-
-            st.success("✅ REAL NEWS")
-
-            st.write(
-                "The model predicts that this news article "
-                "is Real."
-            )
-
-        # --------------------------------------------------
-        # Confidence Score
-        # --------------------------------------------------
-
-        if hasattr(model, "predict_proba"):
-
-            probabilities = model.predict_proba(
-                transformed_text
-            )[0]
-
-            confidence = max(probabilities) * 100
-
-            st.metric(
-                "Prediction Confidence",
-                f"{confidence:.2f}%"
-            )
-
-        st.info(
-            "Note: This prediction is based on the trained "
-            "machine learning model and may not always be correct."
-        )
-
-# --------------------------------------------------
-# Footer
-# --------------------------------------------------
-
-st.divider()
-
-st.caption(
-    "Fake News Detection Project | "
-    "Python • NLP • TF-IDF • Machine Learning • Streamlit"
-)
